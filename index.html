@@ -45,9 +45,9 @@ const html = htm.bind(h);
 
 /* ============================== EDIT BEFORE PUBLISHING ============================== */
 const AUTH = {
-  password: "030824AT",
+  password: "TROQUE-ESTA-SENHA",
   allowedEmails: [
-    "contato@engtals.com.br"
+    "seuemail@escritorio.com.br"
     // adicione um e-mail por linha, entre aspas, separado por vírgula
   ]
 };
@@ -84,26 +84,61 @@ function projFinance(p){
   return { negociado, recebido, aReceber, ultimaPaga };
 }
 
-/* ============================== API (Google Sheets via Apps Script) ============================== */
+/* ============================== API (Google Sheets via Apps Script, sem CORS) ============================== */
+let jsonpCounter = 0;
+function jsonpRequest(url){
+  return new Promise((resolve, reject) => {
+    const cbName = 'cb_' + (jsonpCounter++) + '_' + Date.now();
+    const script = document.createElement('script');
+    let settled = false;
+    const cleanup = () => { delete window[cbName]; script.remove(); clearTimeout(timer); };
+    window[cbName] = data => { if(settled) return; settled = true; cleanup(); resolve(data); };
+    script.onerror = () => { if(settled) return; settled = true; cleanup(); reject(new Error('Não consegui conectar. Confira se a URL está correta e termina em /exec.')); };
+    const timer = setTimeout(() => { if(settled) return; settled = true; cleanup(); reject(new Error('Tempo esgotado ao conectar com a planilha.')); }, 15000);
+    const sep = url.includes('?') ? '&' : '?';
+    script.src = url + sep + 'callback=' + cbName;
+    document.body.appendChild(script);
+  });
+}
+function formPost(url, payloadObj){
+  return new Promise((resolve) => {
+    const iframeName = 'frame_' + Date.now() + '_' + Math.floor(Math.random()*1e6);
+    const iframe = document.createElement('iframe');
+    iframe.name = iframeName;
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = url;
+    form.target = iframeName;
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'payload';
+    input.value = JSON.stringify(payloadObj);
+    form.appendChild(input);
+    document.body.appendChild(form);
+
+    let done = false;
+    const finish = () => {
+      if(done) return; done = true;
+      setTimeout(() => { form.remove(); iframe.remove(); }, 200);
+      resolve({ ok: true });
+    };
+    iframe.addEventListener('load', finish);
+    setTimeout(finish, 8000); // rede muito lenta: segue em frente e confia no próximo recarregamento
+    form.submit();
+  });
+}
 const api = {
   url: () => localStorage.getItem('apiUrl') || '',
   async getAll(){
-    const res = await fetch(this.url() + (this.url().includes('?')?'&':'?') + 'action=getAll');
-    if(!res.ok) throw new Error('Falha ao carregar dados (HTTP '+res.status+')');
-    const data = await res.json();
+    const data = await jsonpRequest(this.url() + '?action=getAll');
     if(data.error) throw new Error(data.error);
     return data;
   },
   async post(action, payload){
-    const res = await fetch(this.url(), {
-      method:'POST',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify(Object.assign({action}, payload))
-    });
-    if(!res.ok) throw new Error('Falha na operação (HTTP '+res.status+')');
-    const data = await res.json();
-    if(data.error) throw new Error(data.error);
-    return data;
+    return formPost(this.url(), Object.assign({action}, payload));
   },
   saveProjeto(p){ return this.post('saveProjeto', {projeto:p}); },
   deleteProjeto(id){ return this.post('deleteProjeto', {id}); },
