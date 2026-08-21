@@ -228,22 +228,25 @@ function Login({onSuccess}){
 }
 
 /* ============================== SETUP (URL do backend) ============================== */
-function Setup({onSaved}){
-  const [url, setUrl] = useState("");
+function Setup({onSaved, canCancel}){
+  const original = useRef(localStorage.getItem('apiUrl') || "");
+  const [url, setUrl] = useState(original.current);
   const [testing, setTesting] = useState(false);
   const [err, setErr] = useState("");
   const save = async () => {
     if(!url.trim()){ setErr("Cole a URL do Apps Script."); return; }
     setTesting(true); setErr("");
+    const previous = localStorage.getItem('apiUrl');
     localStorage.setItem('apiUrl', url.trim());
     try {
       await api.getAll();
       onSaved();
     } catch(e){
       setErr("Não consegui conectar: " + e.message);
-      localStorage.removeItem('apiUrl');
+      if(previous) localStorage.setItem('apiUrl', previous); else localStorage.removeItem('apiUrl');
     } finally { setTesting(false); }
   };
+  const cancel = () => { localStorage.setItem('apiUrl', original.current); onSaved(); };
   return html`<div style=${{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:PAPER,padding:20}}>
     <div class="card" style=${{width:"min(480px,92vw)",padding:28}}>
       <div class="label">Configuração inicial</div>
@@ -254,6 +257,7 @@ function Setup({onSaved}){
       <//>
       ${err && html`<div style=${{color:TERRA,fontSize:13,marginBottom:12}}>${err}</div>`}
       <button class="btn btn-primary" style=${{width:"100%",justifyContent:"center"}} onClick=${save} disabled=${testing}>${testing?"Testando conexão...":"Salvar e conectar"}</button>
+      ${canCancel && html`<button class="btn btn-ghost" style=${{width:"100%",justifyContent:"center",marginTop:10}} onClick=${cancel}>Cancelar</button>`}
     </div>
   </div>`;
 }
@@ -575,7 +579,7 @@ function ClientModal({initial, busy, onClose, onSave}){
 }
 
 /* ============================== APP ============================== */
-function AppMain({email, onLogout}){
+function AppMain({email, onLogout, onChangeApi}){
   const [tab, setTab] = useState("dashboard");
   const [projetos, setProjetos] = useState([]);
   const [clientes, setClientes] = useState([]);
@@ -641,6 +645,7 @@ function AppMain({email, onLogout}){
             ${TABS.map(t => html`<button key=${t.id} onClick=${()=>setTab(t.id)} style=${{padding:"8px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:tab===t.id?"#fff":"transparent",color:tab===t.id?INK:"#C7D2E6"}}>${t.label}</button>`)}
           </nav>
           <span style=${{fontSize:12,color:"#C7D2E6"}}>${email}</span>
+          <button class="btn-ghost btn" style=${{background:"transparent",border:"1px solid rgba(255,255,255,0.3)",color:"#C7D2E6"}} onClick=${onChangeApi}>Trocar planilha</button>
           <button class="btn-ghost btn" style=${{background:"transparent",border:"1px solid rgba(255,255,255,0.3)",color:"#C7D2E6"}} onClick=${onLogout}>Sair</button>
         </div>
       </div>
@@ -665,8 +670,8 @@ function Root(){
   const [apiReady, setApiReady] = useState(!!localStorage.getItem('apiUrl'));
 
   if(!auth) return html`<${Login} onSuccess=${email => setAuth({email})} />`;
-  if(!apiReady) return html`<${Setup} onSaved=${()=>setApiReady(true)} />`;
-  return html`<${AppMain} email=${auth.email} onLogout=${()=>{ localStorage.removeItem('auth-v1'); setAuth(null); }} />`;
+  if(!apiReady) return html`<${Setup} onSaved=${()=>setApiReady(true)} canCancel=${!!localStorage.getItem('apiUrl')} />`;
+  return html`<${AppMain} email=${auth.email} onLogout=${()=>{ localStorage.removeItem('auth-v1'); setAuth(null); }} onChangeApi=${()=>setApiReady(false)} />`;
 }
 
 render(html`<${Root} />`, document.getElementById('root'));
