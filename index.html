@@ -45,7 +45,7 @@ const html = htm.bind(h);
 
 /* ============================== EDIT BEFORE PUBLISHING ============================== */
 const AUTH = {
-  password: "030824AT",
+  password: "030826AT",
   allowedEmails: [
     "contato@engtals.com.br"
     // adicione um e-mail por linha, entre aspas, separado por vírgula
@@ -85,19 +85,27 @@ function projFinance(p){
 }
 
 /* ============================== API (Google Sheets via Apps Script, sem CORS) ============================== */
-let jsonpCounter = 0;
-function jsonpRequest(url){
+function bridgeGet(url, extraQuery){
   return new Promise((resolve, reject) => {
-    const cbName = 'cb_' + (jsonpCounter++) + '_' + Date.now();
-    const script = document.createElement('script');
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
     let settled = false;
-    const cleanup = () => { delete window[cbName]; script.remove(); clearTimeout(timer); };
-    window[cbName] = data => { if(settled) return; settled = true; cleanup(); resolve(data); };
-    script.onerror = () => { if(settled) return; settled = true; cleanup(); reject(new Error('Não consegui conectar. Confira se a URL está correta e termina em /exec.')); };
-    const timer = setTimeout(() => { if(settled) return; settled = true; cleanup(); reject(new Error('Tempo esgotado ao conectar com a planilha.')); }, 15000);
+    const onMsg = (event) => {
+      if(!event.data || !event.data.__appBridge) return;
+      if(settled) return;
+      settled = true;
+      cleanup();
+      resolve(event.data.data);
+    };
+    const cleanup = () => { window.removeEventListener('message', onMsg); clearTimeout(timer); setTimeout(()=>iframe.remove(),50); };
+    window.addEventListener('message', onMsg);
+    const timer = setTimeout(() => {
+      if(settled) return; settled = true; cleanup();
+      reject(new Error('Não consegui conectar. Confira se a URL está correta e termina em /exec.'));
+    }, 15000);
     const sep = url.includes('?') ? '&' : '?';
-    script.src = url + sep + 'callback=' + cbName;
-    document.body.appendChild(script);
+    iframe.src = url + sep + 'bridge=1' + (extraQuery || '');
+    document.body.appendChild(iframe);
   });
 }
 function formPost(url, payloadObj){
@@ -133,7 +141,7 @@ function formPost(url, payloadObj){
 const api = {
   url: () => localStorage.getItem('apiUrl') || '',
   async getAll(){
-    const data = await jsonpRequest(this.url() + '?action=getAll');
+    const data = await bridgeGet(this.url(), '&action=getAll');
     if(data.error) throw new Error(data.error);
     return data;
   },
